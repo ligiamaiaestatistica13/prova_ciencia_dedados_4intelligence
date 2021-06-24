@@ -1,0 +1,828 @@
+---
+title: "Prova_Lígia"
+author: "Lígia Maia"
+date: "22/06/2021"
+output: html_document
+---
+#<div style="text-align: justify">
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(DT)
+library(corrplot)
+library(DMwR2)
+library(descr)
+library(car)
+library(carData)
+library(sciplot)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(relaimpo)
+library(hrbrthemes)
+library(corrr)
+library(broom)
+library(qgraph)
+library(lubridate)
+library(plotly)
+library(latticeExtra)
+library(forecast)
+library(lmtest)
+library(nortest)
+```
+\
+
+Carregando Banco de dados :  **Base de dados (Bases Final ADS Jun2021) com o consumo de energia residencial, comercial e industrial de cada região brasileira.**
+
+
+```{r echo=TRUE} 
+dados= read_xlsx("Bases_Final_ADS_Jun2021.xlsx", sheet = "dados")
+rotulos= read_xlsx("Bases_Final_ADS_Jun2021.xlsx", sheet = "dicionário")
+
+```
+
+Variáveis em estudos da Base de dados 
+
+```{r echo=TRUE, message=TRUE, warning=TRUE, paged.print=TRUE}
+# datatable(dados)
+datatable(rotulos)
+```
+
+
+## Questão 1 - Análise Descritiva
+
+
+```{r eval=FALSE, include=FALSE}
+data_tidy=as.Date(data_tidy)
+```
+
+```{r echo=TRUE}
+length(dados) # Número de variáveis
+count(dados) # Número de linhas
+names(dados) # Nome das variáveis
+
+```
+
+
+
+```{r}
+# Dados Para modelagem - O banco de dados foi separado em dois para que a modelagem dos dados seja realizada.
+
+dados1=dados[1:206,] # Variáveis dependentes com valores observados (considerando Renda e Massa)
+# count(dados1)
+dados2=dados[207:228,] # Variáveis independentes com valores de consumo faltosos
+# count(dados2)
+
+```
+
+
+
+  Existem diversas técnicas de aprendizado de máquina como XGBoost e Random Forest para imputação de dados, mas utilizamos a KNN como ela é amplamente usada. Neste método, k vizinhos são escolhidos com base em alguma medida de distância e sua média é usada como uma estimativa de imputação.O método requer a seleção do número de vizinhos mais próximos e uma métrica de distância. O KNN, no nosso caso, pode prever atributos contínuos (a média entre os k vizinhos mais próximos)
+A métrica da distância varia de acordo com o tipo de dados:
+
+   Dados categóricos: a distância de Hamming é geralmente usada neste caso.Leva todos os atributos categóricos e, para cada um, conta um se o valor não for o mesmo entre dois pontos. A distância de Hamming é então igual ao número de atributos para os quais o valor foi diferente.
+ 
+   A natureza não-paramétrica do KNN confere-lhe uma vantagem em certas configurações onde os dados podem ser altamente “incomuns”. Uma das desvantagens óbvias do algoritmo KNN é que ele consome tempo ao analisar grandes conjuntos de dados porque ele procura instâncias semelhantes em todo o conjunto de dados. Além disso, a precisão do KNN pode ser severamente degradada com dados de alta dimensão, porque há pouca diferença entre o vizinho mais próximo e o mais distante.
+
+```{r}
+dados3 = na.omit(dados) # Banco de dados sem "NA"
+dados4 = knnImputation(dados1) # Imputação de "NA"
+```
+
+
+
+Estamos tarbalhando com um banco de dados contendo 45 variáveis, 206 observações de cada variável de consumo e 22 a mais das demais variáveis que vamos avaliar para melhor estimar o consumo (dados4 -> Valores faltosos, foram estimados pelo KNN)
+
+**Resumo dos dados** 
+
+Estamos trabalhando com informações de janeiro de 2004 à fevereiro de 2021.
+
+
+```{r echo=TRUE}
+
+length(dados4) # Número de variáveis
+count(dados4) # Número de linhas
+names(dados4) # Nome das variáveis
+
+
+```
+
+
+
+**Estatísticas descritivas das variáveis - Medidas de posição**: Valor mímino, Valor Máximo, Quartis (1º, Mediana, 3º), Média.
+
+
+```{r echo=TRUE}
+
+datatable(summary(dados4[,-1]) )# Resumo dos dados
+
+```
+
+
+
+```{r}
+con_media=c(mean(dados4$com_co),mean(dados4$com_n), mean(dados4$com_ne), mean(dados4$com_s), mean(dados4$com_se))
+ind_media=c(mean(dados4$ind_co),mean(dados4$ind_n), mean(dados4$ind_ne), mean(dados4$ind_s), mean(dados4$ind_se))
+res_media=c(mean(dados4$res_co),mean(dados4$res_n), mean(dados4$res_ne), mean(dados4$res_s), mean(dados4$res_se))
+regioes=c("Centro Oeste","Norte", "Nordeste", "Sul", "Sudeste")
+```
+
+**Média de Consumo de energia (Gwh)**
+
+
+Tanto no Comércio, Indústria e Residências, a **maior média de consumo** é da região SUDESTE.
+Já observando os **menores consumos**, a região Norte se destaca quando falamos em Comércio e Residência.
+A região Centro Oeste apresenta menor média de consumo nas indústrias.
+
+
+
+Comércio - Por Região - Fonte: EPE
+```{r}
+
+datatable(data.frame(regioes,con_media))
+
+```
+
+Indústria- Por Região - Fonte: EPE
+```{r}
+datatable(data.frame(regioes,ind_media))
+```
+
+Indústria- Por Região - Fonte: EPE
+```{r}
+datatable(data.frame(regioes,res_media))
+```
+
+
+**Região Centro Oeste - Visualização dos dados variando de acordo com a data**
+
+```{r echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,3))
+plot(dados4$com_co ~ dados4$data_tidy, main="Consumo de energia - Comércio")
+plot(dados4$ind_co ~ dados4$data_tidy, main="Consumo de energia - Indústria")
+plot(dados4$res_co ~ dados4$data_tidy, main="Consumo de energia - Residêcial")
+#plot(dados4$renda_r ~ dados4$data_tidy, main="Gráfico 4")
+#plot(dados4$pop_ocup_br ~ dados4$data_tidy, main="Gráfico 5")
+#plot(dados4$massa_r ~ dados4$data_tidy, main="Gráfico 6")
+#plot(dados4$du ~ dados4$data_tidy, main="Gráfico 6")
+plot(dados4$pmc_a_co ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Ampliada")
+plot(dados4$temp_max_co ~ dados4$data_tidy, main="Temperatura Máxima Mensal")
+plot(dados4$temp_min_co ~ dados4$data_tidy, main="Temperatura Minima Mensal")
+plot(dados4$pmc_r_co ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Restrita")
+plot(dados4$pim_co ~ dados4$data_tidy, main="Produção Industrial")
+#mtext(side=1, text="Meu eixo X ", outer=T)
+#mtext(side=2, text="Meu eixo Y", outer=T)
+
+```
+
+**Região Norte - Visualização dos dados variando de acordo com a data**
+
+```{r echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,3))
+plot(dados4$com_n ~ dados4$data_tidy, main="Consumo de energia - Comércio")
+plot(dados4$ind_n ~ dados4$data_tidy, main="Consumo de energia - Indústria")
+plot(dados4$res_n ~ dados4$data_tidy, main="Consumo de energia - Residêcial")
+#plot(dados4$renda_r ~ dados4$data_tidy, main="Gráfico 4")
+#plot(dados4$pop_ocup_br ~ dados4$data_tidy, main="Gráfico 5")
+#plot(dados4$massa_r ~ dados4$data_tidy, main="Gráfico 6")
+#plot(dados4$du ~ dados4$data_tidy, main="Gráfico 6")
+plot(dados4$pmc_a_n ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Ampliada")
+plot(dados4$temp_max_n ~ dados4$data_tidy, main="Temperatura Máxima Mensal")
+plot(dados4$temp_min_n ~ dados4$data_tidy, main="Temperatura Minima Mensal")
+plot(dados4$pmc_r_n ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Restrita")
+plot(dados4$pim_n ~ dados4$data_tidy, main="Produção Industrial")
+#mtext(side=1, text="Meu eixo X ", outer=T)
+#mtext(side=2, text="Meu eixo Y", outer=T)
+
+```
+
+
+**Região Nordeste - Visualização dos dados variando de acordo com a data**
+
+```{r echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,3))
+plot(dados4$com_ne ~ dados4$data_tidy, main="Consumo de energia - Comércio")
+plot(dados4$ind_ne ~ dados4$data_tidy, main="Consumo de energia - Indústria")
+plot(dados4$res_ne ~ dados4$data_tidy, main="Consumo de energia - Residêcial")
+#plot(dados4$renda_r ~ dados4$data_tidy, main="Gráfico 4")
+#plot(dados4$pop_ocup_br ~ dados4$data_tidy, main="Gráfico 5")
+#plot(dados4$massa_r ~ dados4$data_tidy, main="Gráfico 6")
+#plot(dados4$du ~ dados4$data_tidy, main="Gráfico 6")
+plot(dados4$pmc_a_ne ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Ampliada")
+plot(dados4$temp_max_ne ~ dados4$data_tidy, main="Temperatura Máxima Mensal")
+plot(dados4$temp_min_ne ~ dados4$data_tidy, main="Temperatura Minima Mensal")
+plot(dados4$pmc_r_ne ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Restrita")
+plot(dados4$pim_ne ~ dados4$data_tidy, main="Produção Industrial")
+#mtext(side=1, text="Meu eixo X ", outer=T)
+#mtext(side=2, text="Meu eixo Y", outer=T)
+
+```
+
+
+**Região Sul - Visualização dos dados variando de acordo com a data**
+
+```{r echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,3))
+plot(dados4$com_s ~ dados4$data_tidy, main="Consumo de energia - Comércio")
+plot(dados4$ind_s ~ dados4$data_tidy, main="Consumo de energia - Indústria")
+plot(dados4$res_s ~ dados4$data_tidy, main="Consumo de energia - Residêcial")
+#plot(dados4$renda_r ~ dados4$data_tidy, main="Gráfico 4")
+#plot(dados4$pop_ocup_br ~ dados4$data_tidy, main="Gráfico 5")
+#plot(dados4$massa_r ~ dados4$data_tidy, main="Gráfico 6")
+#plot(dados4$du ~ dados4$data_tidy, main="Gráfico 6")
+plot(dados4$pmc_a_s ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Ampliada")
+plot(dados4$temp_max_s ~ dados4$data_tidy, main="Temperatura Máxima Mensal")
+plot(dados4$temp_min_s ~ dados4$data_tidy, main="Temperatura Minima Mensal")
+plot(dados4$pmc_r_s ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Restrita")
+plot(dados4$pim_s ~ dados4$data_tidy, main="Produção Industrial")
+#mtext(side=1, text="Meu eixo X ", outer=T)
+#mtext(side=2, text="Meu eixo Y", outer=T)
+
+```
+
+
+**Região Sudeste - Visualização dos dados variando de acordo com a data**
+
+```{r echo=FALSE, fig.height=10, fig.width=10}
+par(mfrow=c(3,3))
+plot(dados4$com_se ~ dados4$data_tidy, main="Consumo de energia - Comércio")
+plot(dados4$ind_se ~ dados4$data_tidy, main="Consumo de energia - Indústria")
+plot(dados4$res_se ~ dados4$data_tidy, main="Consumo de energia - Residêcial")
+#plot(dados4$renda_r ~ dados4$data_tidy, main="Gráfico 4")
+#plot(dados4$pop_ocup_br ~ dados4$data_tidy, main="Gráfico 5")
+#plot(dados4$massa_r ~ dados4$data_tidy, main="Gráfico 6")
+#plot(dados4$du ~ dados4$data_tidy, main="Gráfico 6")
+plot(dados4$pmc_a_se ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Ampliada")
+plot(dados4$temp_max_se ~ dados4$data_tidy, main="Temperatura Máxima Mensal")
+plot(dados4$temp_min_se ~ dados4$data_tidy, main="Temperatura Minima Mensal")
+plot(dados4$pmc_r_se ~ dados4$data_tidy, main="Pesquisa Mensal do Comércio Restrita")
+plot(dados4$pim_se ~ dados4$data_tidy, main="Produção Industrial")
+#mtext(side=1, text="Meu eixo X ", outer=T)
+#mtext(side=2, text="Meu eixo Y", outer=T)
+
+```
+**Correlação entre variáveis**
+
+Observa-se que existe alta correlação polsitiva entre as variáveis de métrica de consumo no comércio entre si, independente da região. A Massa de Rendimento e Renda, apresentam o mesmo comportamento (positivamente correlacionadas), porém,  Consumo de Energia no Nordeste reage de forma negativa quando correlacionadas às variáveis citadas.
+
+Avaliando a correlação entre variávies para cada Região, temos forte correlação entre a Pesquisa Mensal do Comércio Ampliada e Restrita.
+
+
+```{r fig.height=20, fig.width=20}
+# Visualizando correlação do banco de dados total
+corrplot(cor(dados4[,-1]))
+
+```
+
+
+
+## Questões 2 e 3 -  Modelo que projeta, com a melhor acurácia possível, o consumo de energia industrial da região Sudeste para os próximos 24 meses e Levando em consideração a modelagem, escolha dos 5 melhores modelos em termos de acurácia.
+
+
+
+**Etapas do desenvolvimento do modelo através da Regressão Linear Múltipla**
+
+```{r}
+dados5=data_frame(dados4[,1],dados4[,11],dados4[,6],dados4[,16],dados4[,17:20],dados4[,41:45])
+```
+
+Trabalhamos como o banco de daddos **dados5** que considera todas as observações sobre Consumo de Energia de janeiro de 2004 à fevereiro de 2021 da Região Sudeste, incluindo as estimativas da Renda Real (Brasil) e Massa de Rendimento Real (Brasil) para os primeiros 98 meses, além de População Ocupada (Brasil) e Dias úteis. 
+
+
+
+**Seleção da variável resposta no modelo (Y).**
+
+A variável escolhida como resposta do modelo de regressão linear múltipla foi o **Consumo de energia (Gwh) - Indústria - Região Sudeste - Fonte: EPE  (ind_se)**.
+
+
+Na Figura abaixo observa-se a série temporal de onsumo de energia (Gwh) - Indústria - Região Sudeste desde janeiro de 2004 à fevereiro de 2021.
+
+
+```{r}
+#serie=ts(dados5$ind_se, start = c(2004,1),frequency=12)
+#plot.ts(serie, xlab="Ano",ylab="Consumo de energia - Indústria")
+```
+
+
+
+
+**Seleção das variáveis explicativas para o modelo.** 
+
+
+Um conjunto de resultados de valores de correlação foi montado para todas as variáveis presentes na base de dados **dados5** com a variável de interesse para resposta. Esse conjunto de informações é apresentado na Figura abaixo. Desta forma é possível rapidamente identificar as variáveis que estão mais correlacionadas com a variável **ind_se**.
+
+De acordo com a análise da correlação, as variáveis escolhidas para fazerem parte do desenvolvimento do modelo foram: Renda Real (renda_r), Massa de Rendimento Real (massa_r), Produção Industrial (pim_se) com coefientes de correlação -0,51, -0,61 e 0,79, respectivamente. O que pode evidenciar que quanto maiores a Renda Real e a Massa de Rendimento, menor é o Consumo de Energia no setor da indústria. Em paralelo, quanto maior a produção Industrial, maior o consumo de energia no setor.
+
+Cada diagrama de dispersão abaixo representa uma das variáveis explicativas com a variável resposta. O título de cada um dos diagramas apresenta o valor encontrado de correlação.
+
+```{r eval=FALSE, fig.width=10, include=FALSE}
+par(mfrow=c(3,2))
+
+# Renda Real (Brasil)
+
+plot(dados5$renda_r,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Renda Real (Brasil)- Fonte: Pnad", las=1, main = cor(dados5$renda_r,dados5$ind_se))
+
+# População Ocupada (Brasil) 
+
+plot(dados5$pop_ocup_br,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="População Ocupada (Brasil) - Fonte: Pnad", las=1, main = cor(dados5$pop_ocup_br,dados5$ind_se))
+
+# Massa de Rendimento Real (Brasil)  
+
+plot(dados5$massa_r,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Massa de Rendimento Real (Brasil) - Fonte: Pnad", las=1, main = cor(dados5$massa_r,dados5$ind_se))
+
+
+# Dias úteis
+
+plot(dados5$du,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Dias úteis", las=1, main = cor(dados5$du,dados5$ind_se))
+
+# Consumo de energia (Gwh) - Comércio - Região Sudeste - Fonte: EPE
+
+plot(dados5$com_se ,dados5$ind_se, pch=16, col="black", ylab="Consumo de energia (Gwh) - Indústria", xlab="Consumo de energia (Gwh) - Comércio", las=1, main = cor(dados5$com_se,dados5$ind_se))
+
+# Consumo de energia (Gwh) - Residencial - Região Sudeste - Fonte: EPE
+
+plot(dados5$res_se,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Consumo de energia (Gwh) - Residencial", las=1, main = cor(dados5$res_se,dados5$ind_se))
+
+# Dias úteis Pesquisa Mensal do Comércio Ampliada (Região Sudeste) - IBGE
+
+plot(dados5$pmc_a_se,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Pesquisa Mensal do Comércio Ampliada (Região Sudeste) - IBGE", las=1, main = cor(dados5$pmc_a_se,dados5$ind_se))
+
+
+# Temperatura Máxima Mensal (Região Sudeste)
+
+plot(dados5$temp_max_se,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Temperatura Máxima Mensal (Região Sudeste)", las=1, main = cor(dados5$temp_max_se,dados5$ind_se))
+
+# Temperatura Minima Mensal (Região Sudeste)
+
+plot(dados5$temp_min_se,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Temperatura Minima Mensal (Região Sudeste)", las=1, main = cor(dados5$temp_min_se,dados5$ind_se))
+
+# Pesquisa Mensal do Comércio Restrita (Região Sudeste) - IBGE
+
+plot(dados5$pmc_r_se,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Pesquisa Mensal do Comércio Restrita (Região Sudeste) - IBGE", las=1, main = cor(dados5$pmc_r_se,dados5$ind_se))
+
+# Produção Industrial (Região Sudeste) - IBGE
+
+plot(dados5$pim_se,dados5$ind_se, pch=16, col="black", ylab="Consumo de Energia (Gwh) - Indústria", xlab="Produção Industrial (Região Sudeste) - IBGE", las=1, main = cor(dados5$pim_se,dados5$ind_se))
+```
+
+Os valores obtidos para os fatores de inflação da variâncias (VIF) foram maiores que 10 em algumas variáveis, o que sinaliza que as variáveis podem apresentar problemas de multicolinearidade. Vamos Aplicar o método de regrssão múltipla para verificar a signifância das variáveis no modelo e poder concluir qual seria a melhor opção.
+
+**Iniciamos a modelagem com o Modelo geral (resultado.rlm) considerando todos as variáveis do dados5 e desconsiderando outras variáveis de consumo por não ter o valor para estimação final.**
+```{r}
+
+
+resultado.rlm <- lm(dados5$ind_se ~ dados5$renda_r + dados5$pop_ocup_br + dados5$massa_r + dados5$du + dados5$pmc_a_se + dados5$temp_max_se + dados5$temp_min_se + dados5$pmc_r_se + dados5$pim_se, data=dados5)
+modelo_aic=step(resultado.rlm) # melhores modelos considerando menor AIC
+
+# Modelos selecionados com menor AIC
+
+resultado.rlm1 <- lm(dados5$ind_se~dados5$renda_r + dados5$pop_ocup_br + dados5$massa_r + 
+    dados5$du + dados5$pmc_a_se + dados5$temp_max_se + dados5$pmc_r_se + 
+    dados5$pim_se, data=dados5)
+
+resultado.rlm2 <- lm(dados5$ind_se~dados5$renda_r + dados5$pop_ocup_br + dados5$massa_r + 
+    dados5$du + dados5$temp_max_se + dados5$pmc_r_se + dados5$pim_se, data=dados5) # <AIC
+
+
+vif.variaveis.modelo <- vif(resultado.rlm);vif.variaveis.modelo
+vif.variaveis.modelo1 <- vif(resultado.rlm1);vif.variaveis.modelo1
+vif.variaveis.modelo2 <- vif(resultado.rlm2);vif.variaveis.modelo2
+
+# Modelos descosiderando variáveis com vif>10, uma por uma e excluindo não significativas
+
+resultado.rlm3 <- lm(dados5$ind_se ~  dados5$renda_r + 
+    dados5$pop_ocup_br + dados5$massa_r + dados5$du + dados5$pmc_a_se + 
+    dados5$temp_max_se + dados5$pim_se, data=dados5) # 
+
+vif.variaveis.modelo3<- vif(resultado.rlm3);vif.variaveis.modelo3
+
+
+resultado.rlm4 <- lm(dados5$ind_se ~
+    dados5$pop_ocup_br + dados5$du + dados5$pmc_a_se + 
+    dados5$temp_max_se + dados5$pim_se, data=dados5) # 
+
+vif.variaveis.modelo4<- vif(resultado.rlm3);vif.variaveis.modelo3
+
+```
+
+
+
+**Desenvolvimento dos modelos e obtenção dos coeficientes da equação e valor-p.**
+
+Com as variáveis explicativas selecionadas, parte-se para o desenvolvimento do modelo por meio da regressão linear múltipla com a utilização da função lm() inserindo as variáveis em relação a variável resposta ind_se. 
+
+Ao considerar todas as variávies em estudo para o modelo, identificamos que  o modelo utilizado referentes a ind_se explicaram (Adjusted R-squared) 79.32% da variação dos dados de ins_se. 
+
+```{r}
+summary(resultado.rlm) # 78,36%
+summary(resultado.rlm1) # 78,21%
+summary(resultado.rlm2) # 78,15% - Todas as variáveis significativas com 95% de confiança
+summary(resultado.rlm3) # 78,09% - Todas as variáveis significativas com 95% de confiança
+summary(resultado.rlm4) # 75,49 - Todas as variáveis significativas com 99 % de confiança
+
+```
+
+
+
+```{r include=FALSE}
+r2.resultado.rlm <- summary(resultado.rlm)$r.squared
+r2.resultado.rlm1 <- summary(resultado.rlm1)$r.squared
+r2.resultado.rlm2 <- summary(resultado.rlm2)$r.squared
+r2.resultado.rlm3 <- summary(resultado.rlm3)$r.squared
+r2.resultado.rlm4 <- summary(resultado.rlm4)$r.squared
+
+r2.resultado.rlm <- round(r2.resultado.rlm*100, digits = 2)
+r2.resultado.rlm1 <- round(r2.resultado.rlm1*100, digits = 2)
+r2.resultado.rlm2 <- round(r2.resultado.rlm2*100, digits = 2)
+r2.resultado.rlm3 <- round(r2.resultado.rlm3*100, digits = 2)
+r2.resultado.rlm4 <- round(r2.resultado.rlm4*100, digits = 2)
+
+adj.r2.resultado.rlm <- summary(resultado.rlm)$adj.r.squared
+adj.r2.resultado.rlm1 <- summary(resultado.rlm1)$adj.r.squared
+adj.r2.resultado.rlm2 <- summary(resultado.rlm2)$adj.r.squared
+adj.r2.resultado.rlm3 <- summary(resultado.rlm3)$adj.r.squared
+adj.r2.resultado.rlm4 <- summary(resultado.rlm4)$adj.r.squared
+
+adj.r2.resultado.rlm <- round(adj.r2.resultado.rlm*100, digits = 2)
+adj.r2.resultado.rlm1 <- round(adj.r2.resultado.rlm1*100, digits = 2)
+adj.r2.resultado.rlm2 <- round(adj.r2.resultado.rlm2*100, digits = 2)
+adj.r2.resultado.rlm3 <- round(adj.r2.resultado.rlm3*100, digits = 2)
+adj.r2.resultado.rlm4 <- round(adj.r2.resultado.rlm4*100, digits = 2)
+
+
+p.valor.resultado.rlm <- glance(resultado.rlm)$p.value; p.valor.resultado.rlm
+p.valor.resultado.rlm1 <- glance(resultado.rlm1)$p.value; p.valor.resultado.rlm1
+p.valor.resultado.rlm2 <- glance(resultado.rlm2)$p.value; p.valor.resultado.rlm2
+p.valor.resultado.rlm3 <- glance(resultado.rlm3)$p.value; p.valor.resultado.rlm3
+p.valor.resultado.rlm4 <- glance(resultado.rlm4)$p.value; p.valor.resultado.rlm4
+
+
+#media erro quadrado
+emq <- sqrt(sum((resultado.rlm$residuals)^2)/resultado.rlm$df.residual);emq
+emq1 <- sqrt(sum((resultado.rlm1$residuals)^2)/resultado.rlm1$df.residual);emq1 
+emq2 <- sqrt(sum((resultado.rlm2$residuals)^2)/resultado.rlm2$df.residual);emq2 
+emq3 <- sqrt(sum((resultado.rlm3$residuals)^2)/resultado.rlm3$df.residual);emq3 
+emq4 <- sqrt(sum((resultado.rlm4$residuals)^2)/resultado.rlm4$df.residual);emq4
+
+#RSE, erro padrao residuo
+rse <- (emq/mean(dados5$ind_se))*100 ;rse #3%, baixo.
+rse1 <- (emq1/mean(dados5$ind_se))*100 ;rse1 #3,10%, baixo.
+rse2 <- (emq2/mean(dados5$ind_se))*100 ;rse2 #3,09%, baixo.
+rse3 <- (emq3/mean(dados5$ind_se))*100 ;rse3 #3,09%, baixo.
+rse4 <- (emq4/mean(dados5$ind_se))*100 ;rse4 #3,32%, baixo.
+
+```
+
+
+Desta maneira, as equações gerada dos modelos de regressão linear múltipla com seus coeficientes está demonstrada abaixo, conforme o output da função.
+
+
+```{r}
+equacao.resultado.rlm <- as.formula(
+  paste0("dados5$ind_se ~ ", round(resultado.rlm$coefficients, digits = 5), " + ", 
+    paste(sprintf("%.3f * %s", 
+                  resultado.rlm$coefficients[-1],  
+                  names(coefficients(resultado.rlm)[-1])), 
+          collapse="+")
+  )
+)
+
+equacao.resultado.rlm
+
+```
+
+Todos os coeficiente das variáveis explicativas utilizadas na regressão apresentaram valor de p significativo nos modelos 2, 3 e 4. Estes valores dos coeficientes de cada uma das variáveis, bem como os respectivos valores de p estão listado a seguir para o modelo inicial.
+
+```{r}
+resultado.rlm$coefficients
+```
+
+
+```{r eval=FALSE, include=FALSE}
+p.value.coef.ind_se <- coef(summary(resultado.rlm))
+```
+
+
+Buscou-se também fazer uma verificação da importância relativa de cada uma das variáveis explicativas sobre a variável resposta.
+
+Identifizamos que a importância relativa das variáveis explicativas no modelo apresenta como as três principais variáveis independentes pim_se, massa_r e renda, respectivamente.
+```{r}
+avaliacao.resultado.rlm <- calc.relimp(resultado.rlm, type = "lmg")
+avaliacao.resultado.rlm
+
+#dataframe com os resultados da avaliacao.resultado.rlm
+impo.variaveis <- data.frame(avaliacao.resultado.rlm$lmg, avaliacao.resultado.rlm$lmg.rank)
+
+#rank de $lmg
+datatable(impo.variaveis <- arrange(impo.variaveis, desc(avaliacao.resultado.rlm$lmg)),colnames = c('Variáveis', 'importância relativa', 'rank'), 
+          caption = 'Rank de importância relativa das variáveis explicativas do modelo de regressão linear múltipla.')
+
+```
+
+
+
+
+**Diagnóstico dos resíduos.**
+
+Os resíduos são a diferença entre o valor da variável resposta ind_se com o valor de ind_se previsto pelo modelo. Nesta etapa se faz a avaliação visual da normalidade dos resíduos do modelo. Nas figuras abaixo são mostrados o gráfico quantil-quantil da normal e o histograma dos resultados dos resíduos.
+
+O gráfico quantil-quantil (q-q) apresenta no eixo y os quantis observados da amostra e o eixo x os quantis teóricos da distribuição normal padrão.
+
+O histograma apresenta a densidade de número de observações no eixo y. O eixo x mostra os valores dos resíduos. Neste histograma foi adicionado a linha em cor vermelha da densidade dos resíduos observados através do do resultado do modelo da regressão linear múltipla.
+
+Ambas as figuras nos indicam que os dados dos resíduos da regressão apresentam normalidade.
+
+**Modelo Geral**
+```{r}
+par(mfrow=c(1,2))
+qqnorm(resultado.rlm$residuals, ylab="Residuos",xlab="Quantis teoricos",main="Gráfico quantil-quantil")
+qqline(resultado.rlm$residuals, lty=1, col="red")
+
+hist(resultado.rlm$residuals, col = 'gray', xlab = 'Resíduos', ylab = 'Densidade de probabilidade', probability = TRUE, main = "Histograma dos Resíduos") 
+lines(density(resultado.rlm$residuals), col="red")
+```
+**Modelo 1**
+```{r}
+par(mfrow=c(1,2))
+qqnorm(resultado.rlm1$residuals, ylab="Residuos",xlab="Quantis teoricos",main="Gráfico quantil-quantil")
+qqline(resultado.rlm1$residuals, lty=1, col="red")
+
+hist(resultado.rlm1$residuals, col = 'gray', xlab = 'Resíduos', ylab = 'Densidade de probabilidade', probability = TRUE, main = "Histograma dos Resíduos") 
+lines(density(resultado.rlm1$residuals), col="red")
+```
+
+**Modelo 2**
+```{r}
+par(mfrow=c(1,2))
+qqnorm(resultado.rlm2$residuals, ylab="Residuos",xlab="Quantis teoricos",main="Gráfico quantil-quantil")
+qqline(resultado.rlm2$residuals, lty=1, col="red")
+
+hist(resultado.rlm2$residuals, col = 'gray', xlab = 'Resíduos', ylab = 'Densidade de probabilidade', probability = TRUE, main = "Histograma dos Resíduos") 
+lines(density(resultado.rlm2$residuals), col="red")
+```
+**Modelo 3**
+```{r}
+par(mfrow=c(1,2))
+qqnorm(resultado.rlm3$residuals, ylab="Residuos",xlab="Quantis teoricos",main="Gráfico quantil-quantil")
+qqline(resultado.rlm3$residuals, lty=1, col="red")
+
+hist(resultado.rlm3$residuals, col = 'gray', xlab = 'Resíduos', ylab = 'Densidade de probabilidade', probability = TRUE, main = "Histograma dos Resíduos") 
+lines(density(resultado.rlm3$residuals), col="red")
+```
+
+**Modelo 4**
+```{r}
+par(mfrow=c(1,2))
+qqnorm(resultado.rlm4$residuals, ylab="Residuos",xlab="Quantis teoricos",main="Gráfico quantil-quantil")
+qqline(resultado.rlm4$residuals, lty=1, col="red")
+
+hist(resultado.rlm4$residuals, col = 'gray', xlab = 'Resíduos', ylab = 'Densidade de probabilidade', probability = TRUE, main = "Histograma dos Resíduos") 
+lines(density(resultado.rlm4$residuals), col="red")
+```
+
+
+Complementa-se no diagnóstico dos resíduos do modelo a verificação da homocedasticidade. No qual busca-se entender se a variância dos resíduos se mostra constante a medida que os valores preditos pela rgressão aumentam.
+ 
+ 
+ Na figura titulada como Resíduos e VPM percebe-se que conforme ocorre um aumento nos valores ajustados do modelo os valores dos resíduos se mostram com variação aleatória. 
+
+
+ 
+```{r echo=FALSE}
+par(mfrow=c(2,2))
+
+plot(fitted(resultado.rlm),residuals(resultado.rlm),xlab="Valores Preditos pelo Modelo (VPM)",ylab="Resíduos", pch=16, main = "Resíduos e VPM - Geral")
+abline(h=0, col="red")
+
+plot(fitted(resultado.rlm1),residuals(resultado.rlm),xlab="Valores Preditos pelo Modelo (VPM)",ylab="Resíduos", pch=16, main = "Resíduos e VPM - Modelo 1")
+abline(h=0, col="red")
+
+plot(fitted(resultado.rlm2),residuals(resultado.rlm),xlab="Valores Preditos pelo Modelo (VPM)",ylab="Resíduos", pch=16, main = "Resíduos e VPM -Modelo 2")
+abline(h=0, col="red")
+
+plot(fitted(resultado.rlm3),residuals(resultado.rlm),xlab="Valores Preditos pelo Modelo (VPM)",ylab="Resíduos", pch=16, main = "Resíduos e VPM Modelo3")
+abline(h=0, col="red")
+
+plot(fitted(resultado.rlm4),residuals(resultado.rlm),xlab="Valores Preditos pelo Modelo (VPM)",ylab="Resíduos", pch=16, main = "Resíduos e VPM Modelo 4")
+abline(h=0, col="red")
+
+
+```
+ 
+ **Aplicação do modelo para os cálculos de previsão do ind_se (fit)**
+ 
+Aplicou-se o modelo de regressão linear múltipla desenvolvido sobre a base de dados do Consumo de energia (Gwh) - Indústria - Região Sudeste - Fonte: EPE  (ind_se). a fim de gerar valores de predição do ind_se (fit), comparar com os valores reais de  e avaliar seus resultados.
+```{r}
+fit <- predict(resultado.rlm, newdata=dados5, se.fit = TRUE, type="response")
+dados5 <- data.frame(dados5,fit)
+
+fit1 <- predict(resultado.rlm1, newdata=dados5, se.fit = TRUE, type="response")
+dados5 <- data.frame(dados5,fit1)
+
+fit2 <- predict(resultado.rlm2, newdata=dados5, se.fit = TRUE, type="response")
+dados5 <- data.frame(dados5,fit2)
+
+fit3 <- predict(resultado.rlm3, newdata=dados5, se.fit = TRUE, type="response")
+dados5 <- data.frame(dados5,fit3)
+
+fit4 <- predict(resultado.rlm4, newdata=dados5, se.fit = TRUE, type="response")
+dados5 <- data.frame(dados5,fit4)
+
+```
+
+**Avaliação dos resíduos (ind_se - fit) na aplicação do modelo.**
+
+Anteriormente foi apresentado o resultado de um histograma dos resíduos através da extração dos valores direto do resultado da regressão. Neste momento, foram calculados os resídos do modelo através da diferença entre o valor real de ind_se e o valor proposto pelo modelo desenvolvido (fit). Observamos as características dos resíduos através do Histograma e do Boxplot.
+
+A diferença deste histograma dos resíduos para o histgrama dos resíduos anterior é que este apresenta a frequência em valor absoluto e o anterior em valor percentual. Buscamos valores próximos à 0.
+
+```{r}
+dados5$residuos <- dados5$ind_se - dados5$fit
+media.residuos.modelo <- mean(dados5$residuos)
+
+par(mfrow=c(1,2))
+hist(dados5$residuos , border=F , col=rgb(0.1,0.8,0.3,0.5) , xlab="resíduos" , main="Resíduos (ind_se - fit)")
+abline(v=media.residuos.modelo, col="red", lty=2)
+
+boxplot(dados5$residuos , xlab="resíduos" , col=rgb(0.8,0.8,0.3,0.5) , las=2, main="Resíduos (ind_se - fit)")
+abline(h=media.residuos.modelo, col="red", lty=2)
+```
+
+
+  
+**Teste de correlação linear entre ind_se e o valor previsto pelo modelo (fit):**
+De maneira complementar, a fim de verificar **acurácia** do modelo, executou-se o teste de correlação linear entre a variável ind_se e o valor estimado para essa variável previsto no modelo (fit).
+```{r}
+resultado.cor.test <- cor.test(dados5$ind_se, dados5$fit)
+resultado.cor.test1 <- cor.test(dados5$ind_se, dados5$fit.1)
+resultado.cor.test2 <- cor.test(dados5$ind_se, dados5$fit.2)
+resultado.cor.test3 <- cor.test(dados5$ind_se, dados5$fit.3)
+resultado.cor.test4 <- cor.test(dados5$ind_se, dados5$fit.4)
+
+resultado.cor.test
+resultado.cor.test1
+resultado.cor.test2
+resultado.cor.test3
+resultado.cor.test4
+
+resultado.cor.test.valor.p <- resultado.cor.test$p.value
+resultado.cor.test.valor.p1 <- resultado.cor.test1$p.value
+resultado.cor.test.valor.p2 <- resultado.cor.test2$p.value
+resultado.cor.test.valor.p3 <- resultado.cor.test3$p.value
+resultado.cor.test.valor.p4 <- resultado.cor.test4$p.value
+
+resultado.cor.test.cor <- resultado.cor.test$estimate
+resultado.cor.test.cor1 <- resultado.cor.test1$estimate
+resultado.cor.test.cor2 <- resultado.cor.test2$estimate
+resultado.cor.test.cor3 <- resultado.cor.test3$estimate
+resultado.cor.test.cor4 <- resultado.cor.test4$estimate
+```
+Existe correlação linear entre o valor do ind_se e o valor previsto para essa variável pels modelo sde regressão linear múltipla (valor-p 0). Quanto maior o valor estimado pelo modelo (fit,fit1....,fit5), maior o valor do ind_se. Comparando o coeficiente de correlação, os modelos Geral abresenta o maior valor (**0,8846**).
+
+**Cálculo do erro relativo médio absoluto (MAPE mean absolute percentage error).**
+
+
+A **acurácia** da predição do modelo estatístico também pode ser quantificada através do erro relativo médio absoluto (MAPE) do modelo, quanto menor for o valor, melhor é o resultado deste índice.
+```{r }
+
+MAPE <- mean(abs(dados5$fit-dados5$ind_se)/dados5$ind_se,na.rm = TRUE)*100
+MAPE1 <- mean(abs(dados5$fit.1-dados5$ind_se)/dados5$ind_se,na.rm = TRUE)*100
+MAPE2 <- mean(abs(dados5$fit.2-dados5$ind_se)/dados5$ind_se,na.rm = TRUE)*100
+MAPE3 <- mean(abs(dados5$fit.3-dados5$ind_se)/dados5$ind_se,na.rm = TRUE)*100
+MAPE4 <- mean(abs(dados5$fit.4-dados5$ind_se)/dados5$ind_se,na.rm = TRUE)*100
+
+```
+
+O menor erro relativo médio absoluto das previsões do modelo resultou em 2.4301% (MAPE), **Modelo 3**. Um valor considerado baixo, refornçando a qualidade do resultado do modelo.
+
+## Estimativa do Consumo de Energia - Indústria - de março de 2021 à dezembro de 2022 da Região Sudeste, com base no modelo gerado no histórico de de janeiro de 2004 até fevereiro de 2021.
+
+O gráfico abaixo representa como o modelo gerado foi capaz de prever os valores de vendas globais de forma satisfatória. Percebe-se que há pouca variação entre o valor real de venda global e o previsto do modelo.
+
+
+**Modelo Geral**
+
+
+```{r echo=FALSE, fig.width=12}
+dados.ind_se.modelo <- dados5 %>% 
+  group_by(dados5$data_tidyx) %>% 
+  summarise(dados5$ind_se, sum(dados5$ind_se),
+            fit = sum(fit))
+serie_fit= ts(dados5$fit, start = c(2004,1),frequency=12)
+
+
+# --> construct separate plots for each series
+
+ind_se.graf <- xyplot(dados5$ind_se ~ dados5$data_tidy, dados.ind_se.modelo, type = "l" , lwd=2)
+fit.graf <- xyplot(dados5$fit ~ dados5$data_tidy, dados.ind_se.modelo, type = "l", lwd=2)
+
+# --> Make the plot with second y axis AND legend:
+doubleYScale(ind_se.graf, fit.graf, text = c("ind_se", "fit") , add.ylab2 = TRUE)
+
+
+```
+
+**Modelo 1**
+
+```{r echo=FALSE, fig.width=12}
+dados.ind_se.modelo1 <- dados5 %>% 
+  group_by(dados5$data_tidyx) %>% 
+  summarise(dados5$ind_se, sum(dados5$ind_se),
+            fit.1 = sum(fit.1))
+
+
+
+# --> construct separate plots for each series
+
+ind_se.graf1 <- xyplot(dados5$ind_se ~ dados5$data_tidy, dados.ind_se.modelo, type = "l" , lwd=2)
+fit.graf1 <- xyplot(dados5$fit.1 ~ dados5$data_tidy, dados.ind_se.modelo, type = "l", lwd=2)
+
+# --> Make the plot with second y axis AND legend:
+doubleYScale(ind_se.graf1, fit.graf1, text = c("ind_se", "fit.1") , add.ylab2 = TRUE)
+```
+
+
+**Modelo 2**
+
+```{r echo=FALSE, fig.width=12}
+dados.ind_se.modelo2 <- dados5 %>% 
+  group_by(dados5$data_tidyx) %>% 
+  summarise(dados5$ind_se, sum(dados5$ind_se),
+            fit.2 = sum(fit.2))
+# --> construct separate plots for each series
+
+ind_se.graf2 <- xyplot(dados5$ind_se ~ dados5$data_tidy, dados.ind_se.modelo, type = "l" , lwd=2)
+fit.graf2 <- xyplot(dados5$fit.2 ~ dados5$data_tidy, dados.ind_se.modelo, type = "l", lwd=2)
+
+# --> Make the plot with second y axis AND legend:
+doubleYScale(ind_se.graf2, fit.graf2, text = c("ind_se", "fit.2") , add.ylab2 = TRUE)
+```
+**Modelo 3**
+
+```{r echo=FALSE, fig.width=12}
+dados.ind_se.modelo3 <- dados5 %>% 
+  group_by(dados5$data_tidyx) %>% 
+  summarise(dados5$ind_se, sum(dados5$ind_se),
+            fit.3 = sum(fit.3))
+# --> construct separate plots for each series
+
+ind_se.graf3 <- xyplot(dados5$ind_se ~ dados5$data_tidy, dados.ind_se.modelo, type = "l" , lwd=2)
+fit.graf3 <- xyplot(dados5$fit.3 ~ dados5$data_tidy, dados.ind_se.modelo, type = "l", lwd=2)
+
+# --> Make the plot with second y axis AND legend:
+doubleYScale(ind_se.graf3, fit.graf3, text = c("ind_se", "fit.3") , add.ylab2 = TRUE)
+```
+
+**Modelo 4**
+
+```{r echo=FALSE, fig.width=12}
+dados.ind_se.modelo4 <- dados5 %>% 
+  group_by(dados5$data_tidyx) %>% 
+  summarise(dados5$ind_se, sum(dados5$ind_se),
+            fit.4 = sum(fit.4))
+# --> construct separate plots for each series
+
+ind_se.graf4 <- xyplot(dados5$ind_se ~ dados5$data_tidy, dados.ind_se.modelo, type = "l" , lwd=2)
+fit.graf4 <- xyplot(dados5$fit.4 ~ dados5$data_tidy, dados.ind_se.modelo, type = "l", lwd=2)
+
+# --> Make the plot with second y axis AND legend:
+doubleYScale(ind_se.graf4, fit.graf4, text = c("ind_se", "fit.1") , add.ylab2 = TRUE)
+```
+
+
+
+
+**Estimativa de Consumo**
+
+**Modelo Geral**
+```{r}
+fit_final <- 5083.30345  + 2.41529*dados2$renda_r  - 0.02230*dados2$pop_ocup_br - 0.02205*dados2$massa_r - 99.01391*dados2$du + 5.31300* dados2$pmc_a_se + 52.23835*dados2$temp_max_se - 14.55529*dados2$temp_min_se + 5.11860*dados2$pmc_r_se+ 38.07491*dados2$pim_se
+dados2$data_tidy=as.Date(dados2$data_tidy)
+datatable(data.frame(dados2[,1],fit_final), caption = "Estimativa de Consumo de Energia (Gwh) - Indústria ")
+
+#dados <- data.frame(dados,fit)
+```
+
+## Considerações finais sobre o modelo desenvolvido.
+O modelo geral de predição da variável resposta ind_se através de regressão linear múltipla das variáveis: Renda Real (Brasil),
+População Ocupada (Brasil), 
+Massa de Rendimento Real (Brasil),
+Dias úteis,
+Pesquisa Mensal do Comércio Ampliada (Região Sudeste),
+Temperatura Máxima Mensal (Região Sudeste),
+Temperatura Minima Mensal (Região Sudeste),
+Pesquisa Mensal do Comércio Restrita (Região Sudeste),
+**Produção Industrial (Região Sudeste)**,
+selecionadas,  da base de dados foi signigicativo (valor-p 0).
+
+
+
+Estas variáveis explicativas utilizadas em conjunto explicaram aproximadaamente 79% da variação dos dados de consumo de energia industrial na região Sudeste, sendo a Produção Industrial, a mais importante. O valor do erro relativo médio absoluto do modelo proposto resultou em 2,43%.
+
+Conclui-se como aceitáveis estas variáveis explicativas selecionadas para prever a variável resposta ind_se.
+
+
+
